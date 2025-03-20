@@ -1,0 +1,401 @@
+'''
+The code below includes a list of file IDs that we used. For security purposes, I will not share them. However, if anyone wants to try this, you can take any Google sheets' URL and copy the ID portion from the URL. You can find out find out more by searching it up. I will also include it below. I have highlighted the ID segment using spaces and {}. 
+Example Sheets ID: https://docs.google.com/spreadsheets/d/   {17KiDKiFGavrb1xxvkJukkKb1OFxz_Lb1Ph8Qc1-ifKE}   /edit?gid=0#gid=0
+
+In the example above, the alphanumeric sequence in the curly brackets is the ID.
+'''
+
+function onOpen(e) {
+  let ui = SpreadsheetApp.getUi();
+  ui.createMenu('Automation tools')
+    .addItem('Validate Planning','GeneratePlan')
+    .addItem('Generate Detail Plan','GenerateTaskLevelPlan')
+    .addToUi(); 
+  
+};
+// CONSTANTS(File Ids)-> 
+// Folder names 
+var BILLING_PLAN = #ID removed from here;
+var PLAN_INPUT = 'Billing Plan';
+var HIGH_LEVEL_PLAN = "HighLevelPlan";
+var PARAMETERS = 'Parameters';
+var TEAMLEADS = 'TeamLeads';
+var FINAL_PLAN = 'Final Plan';
+var STAGING_TASK = "Stage-Tasks";
+var EXCLUDE_PRIORITIES = [0,8,9,11,12,99];
+var EXCLUDE_STAGES =['Weekend','Absent','Leave','Half Day'];
+var EXCLUDE_PROJECT_TYPES =['ARCHITECTURAL'];
+
+//Table headers
+const PLANNING_HEADERS = ['Project Name',	'Stage',	'Billing %'	,'Total Billing %',	'Invoice Amount',	'Agreed Billing',	'Invoice Schedule Date',	'Customer Priority'	,'Assigned target Date',	'Stage Complete',	'Project Status',	'Project Category',	'Area Type',	'Planned Effort',	'Effort Booked',	'Months Remaining',	'Priority'	,'Stage Order','Next Stage','Stage Group'	, 'Team Lead','Ranking Score','Hours Per Week','Running Total Hours','Week Number','Plan Start Date','Stage Start Date', 'Stage End Date'];
+const FINAL_PLAN_HEADER = ['Project Name',	'Stage','Target Date','TeamLead','Stage Start Date','Stage End Date','Planned Effort', 'Consumed Effort','Task','Team Member'];
+
+
+function GenerateTeamLeadArray(){
+  var plan = SpreadsheetApp.openById(BILLING_PLAN).getSheetByName(PLAN_INPUT);
+  var num_row = plan.getLastRow();
+  var leadrow = plan.getRange(2,21,num_row-1,1).getValues();
+  var stagerow = plan.getRange(2,1,num_row-1,1).getValues();
+  var teamLeads = [];
+  for(var i = 1; i<leadrow.length; i++){
+    var lead = leadrow[i][0];
+    if(stagerow[i][0]!= ""){
+      if(! teamLeads.includes(lead) && lead !="" && lead !="#REF!"){
+        teamLeads.push(lead)
+      }
+    }
+  }
+  Logger.log(teamLeads);
+  return teamLeads;
+  };
+
+
+
+function GeneratePlan(){
+  var plan = SpreadsheetApp.openById(BILLING_PLAN).getSheetByName(HIGH_LEVEL_PLAN);
+  plan.clear();
+  plan.getRange(1, 1, 1, PLANNING_HEADERS.length).setValues([PLANNING_HEADERS]);
+  var data = GenerateHighLevelPlan();
+  var plan_last_row = plan.getLastRow();
+  Logger.log("GeneratePlanv->last row in Plan sheet is %s",plan_last_row);
+  var team_leads = Object.keys(data);
+  Logger.log("GeneratePlanv->Received Team Lead data for %s and number of records in team lead is %s",team_leads,team_leads.length);
+
+  for (var i = 0; i < team_leads.length; i++) {
+    var lead = team_leads[i];
+    var projects = data[lead];
+    Logger.log("GeneratePlanv->High Level Plan for %s, who has %s Projects is %s",lead,projects.length,projects,);
+    Logger.log("GeneratePlanv->Data will be added from %s, rows %s, columns %s",plan_last_row,projects.length, projects[0].length);
+    plan.getRange(plan_last_row + 1, 1, projects.length, projects[0].length).setValues(projects);
+    plan_last_row=plan_last_row+projects.length;
+  }
+  //GenerateTaskLevelPlan();
+}
+
+
+function GenerateHighLevelPlan() {
+  var project_plan = SpreadsheetApp.openById(BILLING_PLAN).getSheetByName(PLAN_INPUT);
+  var parameters = SpreadsheetApp.openById(BILLING_PLAN).getSheetByName(PARAMETERS);
+  var startdate_input = parameters.getRange(1,2,1,1).getValue();
+  var startdate = new Date(startdate_input);
+  startdate.setHours(0, 0, 0, 0);  
+  var project_range = project_plan.getDataRange();
+  var project_lastrow = project_range.getLastRow();
+  //Logger.log('Project last row'+ project_lastrow);
+  var num_col = project_range.getNumColumns();
+  var num_row = project_range.getNumRows();
+  var teamlead_dict = {};
+  var temparray = [];
+  var stagingarray = [];
+  var team_leads = GenerateTeamLeadArray();
+  var teamlead_row = project_plan.getRange(2, 21, project_lastrow - 1, 1).getValues();
+
+  Logger.log("Team Leads array is %s",team_leads);
+  for (var cnt = 0; cnt < team_leads.length; cnt++) {
+    var name = team_leads[cnt];
+    teamlead_dict[name] = [];
+  }
+  var rowsadded =0;
+  //Logger.log(project_lastrow);
+  for(var count = 0; count<project_lastrow-1; count++){
+    if(project_plan[count+2,0]!='' && project_plan[count+2,1]!=''){
+      var values = project_plan.getRange(count + 2, 1, 1, 23).getValues()[0];
+      //Logger.log('Project Name '+ values[0] + 'Priority = '+ values[16]+  ' and y/n =' + values[9])
+      Logger.log('GenerateHighLevelPlan->Values from billing sheet are %s',values);
+      // Values[16] - means Priority.
+      if( values[16]==0||EXCLUDE_PRIORITIES.includes(values[17])|| values[9]=='Y' ||values[9]=='YES' || EXCLUDE_PROJECT_TYPES.includes(values[11])){
+
+        } else {
+        
+        var teamleadname = values[20];
+        Logger.log('GenerateHighLevelPlan->team lead name is %s',teamleadname);
+        if (teamlead_dict[teamleadname]) {
+          //Logger.log(ranking_value+ " |values are " + values);
+          teamlead_dict[teamleadname].push(values); 
+          rowsadded+=1;
+
+          //Logger.log('Count is '+count)
+        }
+      }
+    }
+    Logger.log('GenerateHighLevelPlan->Creating TeamLead Wise Dictionary. Count is %s',count);
+
+  }
+  //Logger.log("and rows present" + project_lastrow-1)
+  //Logger.log("GenerateHighLevelPlanv1->Before SortProjectStagesv1 Dictionary is %s",teamlead_dict);
+  teamlead_dict = SortProjectStages(teamlead_dict);
+  Logger.log("GenerateHighLevelPlan->After SortProjectStages. The start date for planning is %s",startdate);
+  teamlead_dict= GetRunningTotal(teamlead_dict,startdate);
+  Logger.log("GenerateHighLevelPlan->After GetRunningTotal time is");  
+  //teamlead_dict= GeneratePlanDatesForStagesv1(teamlead_dict);
+  //Logger.log("After GeneratePlanDatesForStagesv1 time is");  
+
+  //Logger.log("GenerateHighLevelPlanv1-> Teamlead_dict is %s",teamlead_dict);
+
+  return teamlead_dict;
+}
+// 7 & 16
+
+function SortProjectStages(dict) {
+  //Logger.log("SortProjectStages-> Received Dictionary is %s",dict);
+  var team_leads = Object.keys(dict);
+  for (var i = 0; i < team_leads.length; i++) {
+    var projectlist = dict[team_leads[i]];
+    //Logger.log("SortProjectStagesv1-> for Team lead %s, unsorted project list if %s",team_leads[i],projectlist);
+    projectlist.sort(function(a, b) {
+      //a[21] is score
+      //Logger.log("values being compared are: " + a[21] +" and "+ b[21])
+      return a[21] - b[21];
+    });
+    //Logger.log("SortProjectStages-> for Team lead %s, the sorted project list if %s",team_leads[i],projectlist);
+    dict[team_leads[i]] = projectlist; // Ensure the sorted list is updated back in the dictionary
+  }
+  return dict;
+};
+
+function GetRunningTotal(dict,startdate){
+  var data = dict;
+  var team_leads = Object.keys(data);
+  for (var i = 0; i < team_leads.length; i++) {
+    var projectlist = data[team_leads[i]];
+    var cumulative_value = 0;
+    var week_num=0;
+    var hours_per_week=0;
+    Logger.log('GetRunningTotal->Project List length = %s and columns = %s ' + projectlist.length,projectlist[0].length);
+    for(var int = 0; int<projectlist.length; int++){
+      //Logger.log('int = ' +int);
+      //
+      
+      if(int == 0){
+        //Logger.log("Entering if");
+        cumulative_value = projectlist[int][13];
+      }
+      else{
+        cumulative_value = cumulative_value + projectlist[int][13];
+      }
+      hours_per_week=projectlist[int][22];
+      Logger.log(projectlist[int]);
+      Logger.log('GetRunningTotal-> Hours required:- %s, Running Total:- %s and Hours Per week is %s'  ,projectlist[int][13],cumulative_value,hours_per_week);
+      week_num=(Math.floor(cumulative_value/hours_per_week)+1);
+      var ssdate_calc = new Date();
+      ssdate_calc.setDate(startdate.getDate() + ((week_num-1)*7));
+      ssdate_calc.setHours(0, 0, 0, 0);
+      
+      var sedate_calc = new Date();
+      sedate_calc.setDate(startdate.getDate() + ((week_num)*7));
+      sedate_calc.setHours(0, 0, 0, 0);
+      
+      projectlist[int].push(cumulative_value);
+      projectlist[int].push(week_num);
+      projectlist[int].push(startdate);
+      projectlist[int].push(ssdate_calc);
+      projectlist[int].push(sedate_calc)
+
+      //Logger.log("Project , Stage - Effort + Prior Total = Running total  %s - %s, %s + %s = %s array lenght %s ",projectlist[int][0][0],projectlist[int][0][1],projectlist[int][0][13],cumulative_value,projectlist[int][0][23],projectlist[int][0].length);
+      //Logger.log(projectlist[int][0]);
+      
+      
+
+      }
+      data[team_leads[i]] = projectlist;
+      //Logger.log("GetRunningTotalv1-> for Team lead %s, Project List with Running Total is %s",team_leads[i],projectlist);
+  }
+  //Logger.log("Running Total calculated");
+  //Logger.log(data);
+  return data;
+
+};
+
+
+function GeneratePlanDatesForStages(dict){
+  //var data = projectranking4();
+  var data = dict;
+  var teamleadsheet = SpreadsheetApp.openById(BILLING_PLAN).getSheetByName(TEAMLEADS);
+  var parameters = SpreadsheetApp.openById(BILLING_PLAN).getSheetByName(PARAMETERS);
+  var startdate_input = parameters.getRange(1,2,1,1).getValue()
+  var startdate = new Date(startdate_input);
+  var days_per_week = parameters.getRange(2,2,1,1).getValue();
+  var hours_per_day = parameters.getRange(3,2,1,1).getValue();
+  var hours_per_week = days_per_week*hours_per_day;
+  //Logger.log("Start Date is %s, Days_per_Week is %s, hours_per_day is %s and Hours_per_Week is %s ",startdate,days_per_week,hours_per_day,hours_per_week);
+  var team_leads = Object.keys(data);
+  var tlsheet_lastrow = teamleadsheet.getLastRow();
+  var lead_member_matrix = {};
+  var plan_values = [];
+
+  for(var int = 1; int<tlsheet_lastrow;int++){
+    var name = teamleadsheet.getRange(int+1,1,1,1).getValue();
+    var teamsize = teamleadsheet.getRange(int+1,2,1,1).getValue();
+    //Logger.log('Name is ' +name);
+    //Logger.log('Size is ' +teamsize);
+    lead_member_matrix[name] = [];
+    lead_member_matrix[name].push(teamsize);
+  }
+  //Logger.log(lead_member_matrix);
+ 
+  
+  for( var i = 0; i<team_leads.length;i++){
+    var lead_data = data[team_leads[i]];
+    //if(i>1){
+    //  break
+    //}
+    for(var cnt = 0; cnt<lead_data.length;cnt++){
+      var teamlead = team_leads[i];
+      
+      var size = lead_member_matrix[team_leads[i]];
+      //Logger.log("Team Lead is %s, and the size is %s ",teamlead,size);
+      if(isNaN(size) || size == ""){
+        size = 1;
+      };
+      
+      //Logger.log(lead_member_matrix[team_leads[i][0]]);
+      lead_data[cnt][0].push(size);
+      var hours_per_team = hours_per_week*size;
+      //Logger.log('hours per week is:- %s and Size is:- %s',  hours_per_week , size);
+      lead_data[cnt][0].push(hours_per_team);
+      Logger.log(lead_data[cnt][0]);
+      Logger.log("hours per team = %s, running total is %s, Array length is %s " , hours_per_team , lead_data[cnt][0][22] , lead_data[cnt][0].length);
+      var week_num = (Math.floor(lead_data[cnt][0][22]/(hours_per_team))+1);
+      //Logger.log("Hours per week is"+ hours_per_week);
+      //Logger.log("Running Total is " + lead_data[cnt][24] + " or " + lead_data[cnt][3]);
+      //Logger.log("Weekly Effort for Team lead is "+ hours_per_week*size);
+      //Logger.log('Week Num is ' + week_num);
+      lead_data[cnt][0].push(week_num);
+      lead_data[cnt][0].push(startdate);
+      //Logger.log('Start Date ' + startdate);
+      var plan_Start_Date = new Date();
+      var ssdate_calc = new Date();
+      ssdate_calc.setDate(startdate.getDate() + ((week_num-1)*7));
+      ssdate_calc.setHours(0, 0, 0, 0);
+      //var ssdate_calc = new Date(plan_Start_Date.getDate() + ((week_num-1)*7));
+      //Logger.log('Start Date calculated ' + ssdate_calc);
+      var stage_start_date = ssdate_calc;
+      lead_data[cnt][0].push(ssdate_calc);
+      var sedate_calc = new Date();
+      sedate_calc.setDate(startdate.getDate() + ((week_num)*7));
+      sedate_calc.setHours(0, 0, 0, 0);
+      var stage_end_date = sedate_calc;
+      //Logger.log('End Date calculated ' + sedate_calc);
+      lead_data[cnt][0].push(sedate_calc)
+    }
+    data[team_leads[i]]=lead_data;
+    
+  }
+  //Logger.log('Modified lead data is ' +lead_data);
+  return data;
+  
+}
+
+function GenerateTaskLevelPlan(){
+  var ranked = SpreadsheetApp.openById(BILLING_PLAN).getSheetByName(HIGH_LEVEL_PLAN);
+  var final_plan = SpreadsheetApp.openById(BILLING_PLAN).getSheetByName(FINAL_PLAN);
+  var master = SpreadsheetApp.openById(BILLING_PLAN).getSheetByName(STAGING_TASK);
+  var master_lastrow = master.getLastRow();
+  var ranked_lastrow = ranked.getLastRow();
+  var task_data = master.getRange(2,1,master_lastrow-1,3).getValues();
+  var stage_row = master.getRange(2,1,master_lastrow-1,1).getValues();
+  final_plan.clear();
+  var stages = [];
+  var projectname ="";
+  var stage ="";
+  var lead ="";
+  var startDate =new Date();
+  var endDate =new Date();
+  var effortPlanned =0;
+  var effortConsumed =0;
+  var plan_values = [];
+
+  var plandate = new Date();
+  for(var int = 1;int<master_lastrow-1;int++){
+    if(!stages.includes(stage_row[int][0])){
+      stages.push(stage_row[int][0]);
+    };
+    
+  };
+  Logger.log("GenerateTaskLevelPlan->Stages are %s with number of stages %s",stages,stages.length);
+  //Create Stage keay based dictionary of applicable tasks
+  var stage_tasks = {};
+  for(var x =0; x<stages.length; x++){
+    stage_tasks[stages[x]]=[];
+  }
+  //Logger.log(stage_tasks);
+
+  for(var i = 0; i<master_lastrow-1 ;i++){
+    var is_task_for_planning=task_data[i][2];
+    var stage =task_data[i][0];
+    var taskname = task_data[i][1];
+    if(is_task_for_planning.toUpperCase()=="YES" ||is_task_for_planning.toUpperCase()=="Y"){
+      if( EXCLUDE_STAGES.includes(stage)){
+      } else {
+      stage_tasks[stage].push(taskname);
+      }
+    } 
+   }
+  Logger.log("GenerateTaskLevelPlan->planning specific tasks are %s",stage_tasks);
+
+
+  
+  for(var n =1; n<ranked_lastrow-1;n++){
+    var project_row=ranked.getRange(n+1,1,1,28).getValues()[0];
+    projectname=project_row[0];
+    stage=project_row[1];
+    lead=project_row[20];
+    var scheduled_date=project_row[6];
+    var target_date=project_row[8];
+    if(target_date!=''){
+      plandate=target_date;
+    }else{
+      plandate=scheduled_date;
+    };
+
+    startDate=project_row[26];
+    endDate=project_row[27];
+    effortPlanned=project_row[13];
+    effortConsumed=project_row[14];
+
+   // Logger.log('GenerateTaskLevelPlan-> ProjectName %s,stage %s,lead %s,scheduled_date %s,target_date %s,plandate %s,startDate %s,endDate %s,effortPlanned %s,effortConsumed %s, ',projectname,stage,lead,scheduled_date,target_date,plandate,startDate,endDate,effortPlanned,effortConsumed);
+    var project_stage_tasks =[];
+    //if(Object.keys(stage_tasks).includes(stage)){
+    project_stage_tasks = stage_tasks[stage];
+    //}else {
+      //project_stage_tasks = [""];
+    //}
+    if (project_stage_tasks == null) {
+      // Handle the null case
+      project_stage_tasks = [""];
+    }
+    
+    //Logger.log(project_stage_tasks);
+    var task = [];
+    var final_lastrow = 0;
+    for(var a= 0; a<project_stage_tasks.length; a++){
+      //Logger.log("task is before assigning project " + task);
+      task.push(projectname);
+      task.push(stage);
+      task.push(plandate);
+      task.push(lead);
+      task.push(startDate);
+      task.push(endDate);
+      task.push(effortPlanned);
+      task.push(effortConsumed);
+ 
+      final_lastrow = final_plan.getLastRow();
+      //Logger.log("task is before adding next task " + task);
+      
+      task.push(project_stage_tasks[a]);
+      //Logger.log("task is after adding next task " + task);
+      
+      //Logger.log(plan_values);
+      plan_values.push(task);
+      //task.length = 0;
+      task=[];
+
+    }
+     
+  }
+  Logger.log("GenerateTaskLevelPlan->The Columns are %s and Rows are %s",FINAL_PLAN_HEADER.length,plan_values.length);
+
+  final_plan.getRange(1,1,1,FINAL_PLAN_HEADER.length).setValues([FINAL_PLAN_HEADER]);
+  final_plan.getRange(2,1,plan_values.length,FINAL_PLAN_HEADER.length-1).setValues(plan_values);
+}  
+
