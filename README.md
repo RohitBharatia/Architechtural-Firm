@@ -1,6 +1,6 @@
-# Studio-Roots
-This repo contains all the work I have done for an Architechture firm called Studio Roots.
-The aim of this project was to keep costs down as well as provide a solution using tools that the client was comfortable using. To stick to this goal, we used the Google suit of tools: Drive, Sheets, Looker Studio and Apps Script. This repository consists of all the code I wrote in Apps Script for the project.
+
+This repo contains all the work I have done for an architecture firm.
+The aim of this project was to keep costs down as well as provide a solution using tools that the client was comfortable using. To stick to this goal, we used the Google suit of tools: Drive, Sheets, Looker Studio and Apps Script. This repository comprises all the code I wrote in Apps Script for the project.
 
 #### The work I've done can be split into the following 2 buckets.
 >##### 1. Employee and Task Management
@@ -20,5 +20,4 @@ The project spanned a few months and was a pretty fun to do. We did have some di
 
 Thanks for looking through this project!
 
-For anyone interested, Studio Roots has done some interesting work so give them a visit if you like! Here's their website: 
-[Studio Roots](https://studioroots.in/)
+If you are interested in the firm I did this work for, feel free to reach out to me!
