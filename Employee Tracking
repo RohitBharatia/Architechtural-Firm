@@ -1,0 +1,668 @@
+'''
+The code below includes a list of file IDs that we used. For security purposes, I will not share them. However, if anyone wants to try this, you can take any Google sheets' URL and copy the ID portion from the URL. You can find out find out more by searching it up. I will also include it below. I have highlighted the ID segment using spaces and {}. 
+Example Sheets ID: https://docs.google.com/spreadsheets/d/  -> {17KiDKiFGavrb1xxvkJukkKb1OFxz_Lb1Ph8Qc1-ifKE}  <- /edit?gid=0#gid=0
+
+In the example above, the alphanumeric sequence in the curly brackets is the ID.
+'''
+
+
+function onOpen(e) {
+  let ui = SpreadsheetApp.getUi();
+  ui.createMenu('Automation tools')
+    .addItem('Consolidate Invoices', 'parse_for_files_in_accounting')
+    .addItem('Backup and Consolidate', 'backup_consolidate')
+    .addItem('Migrate Historical Data', 'takehistoricaldata')
+    .addToUi(); 
+  
+};
+
+// CONSTANTS(File Ids)-> 
+// Folder names 
+
+var LOG_SHEET_FOLDER = 'Team LogSheets'
+var AUTOMATED_HISTORY_FOLDER = 'Timesheet History - Automated';
+var MANUAL_HISTORY_FOLDER = 'Timesheet History - Manual';
+var ACCOUNTING_FOLDER = "Accounting";
+//File IDs 
+# IDs below have been Removed
+var DATA_MART_SHEET = ;
+var STAGING_SHEET = ;
+var DATA_MART_BACKUP_SHEET =;
+var FINANCIAL_PLAN_SHEET = ;
+//var FINANCIAL_PLAN_SHEET = ;
+var INVOICE_MART = ; 
+
+//Worksheet Names
+var TIMESHEET = 'TIMESHEET';
+var BACKUP = "Backup";
+var STAGING_BACKUP = 'Staging Backup';
+var STAGING_INVOICES = "Staging Invoices";
+var STAGING_INVOICEPLAN = "Staging InvoicePlan";
+var BILLINGMART = "FinanceMart";
+var EFFORT_SUMMARY = "BookedEfforts";
+var INVOICES = "Invoices";
+var BILLING_PLAN = 'Billing Plan';
+var HISTORY = 'History';
+//Datamart Headers
+const HEADER = ['Source','Name','date','Project Name','Stage','Task','Revision','Time Spent','Sheet Size', 'Number of sheets', 'Drawing Number', 'Remarks','Billing %','Invoice Amount', 'Customer Priority', 'Assigned Target Date', 'Stage Complete', 'Area Type','Planned Effort'];
+/*const HEADER = ['Source','Name','date','Project Name','Stage','Task','Revision','Time Spent','Sheet Size', 'Number of sheets', 'Drawing Number', 'Remarks','Billing %','Invoice Amount', 'Customer Priority', 'Assigned Target Date', 'Stage Complete', 'Area Type','Planned Effort','Company',	'Invoice Type',	'NET BILL AMOUNT','GST',	'TOTAL AMOUNT','TDS',	'Amount to be Received',	'RECEIVED',	'Balance Amount',	'Payment Date','Payment Comment'];*/
+const INVOICES_HEADER = ['Company',	'Invoice Type',	'Invoice Date',	'Project-Inv no / Typology / FY/Inv Series','Project Name',	'Corrected Project Name',	'Stage',	'Project Location',	'Client Name & Location',	'NET BILL AMOUNT (A)',	'G.S.T',	'TOTAL AMOUNT (B)',	'T.D.S (C)',	'Amount to be Received (D)',	'RECEIVED (E)',	'Balance Amount (F)',	'Payment Date',	'Comment',	'Monthly Bill (without GST)',	'Monthly GST Paid',	'Received AMT Person',	'Give To Umesh Prachi',	'Remarks'];
+const BILLING_MART_HEADER = ['Source','Company','Invoice Type','Invoice Date','Invoice No','Project Name','Corrected Project Name','Stage','Project Location','Client Name & Location','NET BILL AMOUNT','GST','TOTAL AMOUNT','TDS','Amount to be Received','RECEIVED','Balance Amount','Payment Date','Comment','Monthly Bill without GST','Monthly GST Paid','Received AMT Person','Give To Umesh Prachi','Remarks','Billing %','Invoice Amount','Customer Priority','Assigned Target Date','Stage Complete','Area Type','Planned Effort','EffortBooked','Name'];
+
+function backup_consolidate(){
+  var folders = DriveApp.getFoldersByName(LOG_SHEET_FOLDER);
+
+  takebackup();
+
+  importHistorical(MANUAL_HISTORY_FOLDER);
+  importHistorical(AUTOMATED_HISTORY_FOLDER);
+  gettimesheetdata();
+  populatefromplan();
+  //invoices_to_data_mart();
+};
+
+function gettimesheetdata(){
+  var folders = DriveApp.getFoldersByName(LOG_SHEET_FOLDER);
+    if (folders.hasNext()){
+      var folder = folders.next();
+      var files = folder.getFiles();
+      var filter = folder.searchFiles('title contains "Log Sheet - "');
+  
+
+
+    while (filter.hasNext()){
+      var file = filter.next();
+      var filename = file.getName();
+      var namearray = filename.split(' - ');
+      var fileid = file.getId();
+      Logger.log(fileid + namearray[1]);
+      
+      var a= importLogsheets(fileid, namearray[1]);
+      Logger.log("Import Logsheets Finished" + a);
+      
+      if (a==1){
+        Logger.log("Success");
+         
+      }else if (a==2){
+        Logger.log('Error #2');
+      }else if(a==3){
+        Logger.log("Error #3");
+      };
+    
+      //Logger.log(namearray[1] + fileid);
+    };
+  } else {
+    Logger.log('No folder found with the name: ' + folderName);
+  };
+}
+
+
+
+
+function importLogsheets(sourceid, emplname) {
+  Logger.log("ImportLogSheets - Started");
+  var tslastrow;
+  var dmlastrow;
+  try{ 
+    const import_sheet = SpreadsheetApp.openById(sourceid).getSheetByName(TIMESHEET);
+    tslastrow = import_sheet.getLastRow();
+    if (!import_sheet){
+      throw new Error("Import Sheet Not found");
+      Logger.log("Isheet error");
+    
+    }
+    const dmsheet = SpreadsheetApp.openById(DATA_MART_SHEET).getSheetByName(TIMESHEET);
+    dmlastrow = dmsheet.getLastRow();
+    if (!dmsheet){
+      throw new Error('Export Sheet Not Found');
+      Logger.log("DMSHEET error");
+    }
+  
+
+    if(tslastrow>0){
+      let sortRange = import_sheet.getRange(2, 1, tslastrow - 1, 10).getValues();
+      //Logger.log('Number of rows to move: ' + sortRange.length);
+
+      Logger.log("Length in source is %s for %s",sortRange.length,emplname);
+      var filtered = sortRange.filter(function(r){
+        //Logger.log(r[0]);
+        if (r[0]!=""){
+          return r;}
+      });
+      Logger.log("Length in filtered is %s for %s",filtered.length,emplname);
+      dmsheet.getRange(dmlastrow +1 , 1, filtered.length, 1).setValue('Timesheet');
+      dmsheet.getRange(dmlastrow +1 , 2, filtered.length, 1).setValue(emplname);
+      dmsheet.getRange(dmlastrow +1 , 3, filtered.length, 10).setValues(filtered);
+ 
+      /*
+      let inputcnt = 1;
+
+
+
+      for (let int = 0; int < sortRange.length; int++) {
+        let sourcevalues = sortRange[int]
+        //Logger.log(sourcevalues);
+        //Logger.log(sourcevalues[0]);
+
+
+        if ( sourcevalues[0] != ""){
+          sourcevalues.splice(0,0,emplname);
+          sourcevalues.splice(0,0,'Timesheet');
+          //Logger.log("inside if "+ int + "Last row count in Target sheet" + dmlastrow); 
+          dmsheet.getRange(dmlastrow + inputcnt, 1, 1, 12).setValues([sourcevalues]);
+          //Logger.log(sourcevalues);
+          inputcnt++;
+        }
+      
+      }
+      */
+    }
+  }catch(e){
+    Logger.log(e.message)
+    return 7
+  }
+}
+
+function takebackup(){
+  const dmsheet = SpreadsheetApp.openById(DATA_MART_SHEET).getSheetByName(TIMESHEET);
+  const backup = SpreadsheetApp.openById(DATA_MART_BACKUP_SHEET).getSheetByName(BACKUP);
+
+  backup.clear();
+  var dmrange = dmsheet.getDataRange();
+  var dmvals = dmrange.getValues();
+  var rangerows = dmrange.getNumRows();
+  var rangecol = dmrange.getNumColumns();
+  //Logger.log("the number of rows are " + rangerows +"and columns are "+ rangecol)
+
+  backup.getRange(1,1,rangerows, rangecol).setValues(dmvals);
+  dmsheet.clear();
+
+  //Logger.log("header array");
+  dmsheet.getRange(1,1,1, HEADER.length).setValues([HEADER]);
+};
+//1GaHSHTt6mN9wmwlH6Py9b-ipRxtTfZNmmmQsfupHH2o
+
+
+
+
+
+
+
+function populatefromplan(){
+  const plansheet = SpreadsheetApp.openById(FINANCIAL_PLAN_SHEET).getSheetByName(BILLING_PLAN);
+  const dmsheet = SpreadsheetApp.openById(DATA_MART_SHEET).getSheetByName(TIMESHEET);
+  const stagingsheet = SpreadsheetApp.openById(STAGING_SHEET).getSheetByName(STAGING_BACKUP)
+
+  var planrange = plansheet.getDataRange();
+  var planleng = planrange.getNumRows();
+  //Get Project and Stage
+  var planrangeps = plansheet.getRange(2,1,planleng,2);
+  var planvalps = planrangeps.getValues(); //
+  //Get Billing %
+  var planrangeb = plansheet.getRange(2,3,planleng,1 );
+  var planvalb = planrangeb.getValues();//
+  //Get Invoice Amount
+  var planrangeia = plansheet.getRange(2,5,planleng,1);
+  var planvalia = planrangeia.getValues();
+  //Get Invoice Scheduled Date
+  var planrangeisd = plansheet.getRange(2,7,planleng,1);
+  var planvalisd = planrangeisd.getValues();
+
+  //Get Invoice payment details
+  var planrangeCASap = plansheet.getRange(2,8,planleng,3);
+  var planvalCASap = planrangeCASap.getValues();
+
+  //Get Area Type and Planned Effort
+  var planrangeap = plansheet.getRange(2,13,planleng,2);
+  var planvalap = planrangeap.getValues();
+
+  var timesheetrange = dmsheet.getDataRange();
+  var timeleng = timesheetrange.getNumRows();
+
+  //paste Project and Stage
+  stagingsheet.getRange(1,4,planleng,2).setValues(planvalps);
+  //Paste Billing %
+  stagingsheet.getRange(1,13,planleng,1).setValues(planvalb);
+  //Paste Invoice Amount
+  stagingsheet.getRange(1,14,planleng,1).setValues(planvalia);
+  //Paste Invoice Scheduled Date
+  stagingsheet.getRange(1,3,planleng,1).setValues(planvalisd);
+  //Paste Invoice payment details
+  stagingsheet.getRange(1,15,planleng,3).setValues(planvalCASap);
+  //Get Area Type and Planned Effort
+  stagingsheet.getRange(1,18,planleng,2).setValues(planvalap);
+
+  var stagingrange = stagingsheet.getDataRange();
+  var stagingvals = stagingrange.getValues();
+  Logger.log('Entering Filter');
+  Logger.log(stagingrange.getNumRows());
+  Logger.log(stagingvals[1,4]);
+  
+  var filteredfromplan = [];
+  for(var i = 0; i< stagingrange.getNumRows();i++){
+    if(stagingvals[i][3] != ""){
+      Logger.log(stagingvals[i][3]);
+      filteredfromplan.push(stagingvals[i]);
+    };
+  };
+  dmsheet.getRange(1+timeleng,1,filteredfromplan.length,19).setValues(filteredfromplan)
+  
+  var source = [];
+  for (var i = 0; i < filteredfromplan.length; i++ ){
+
+    source.push(['Plan'])
+  };
+  dmsheet.getRange(1+timeleng,1,filteredfromplan.length,1).setValues(source);
+
+
+};
+
+function importHistorical(sourcefolder){
+  Logger.log("importHistorical Started for " + sourcefolder);
+  var folders = DriveApp.getFoldersByName(sourcefolder);
+  
+
+  if (folders.hasNext()) {
+    var folder = folders.next();
+    var files = folder.getFiles();
+    var filter = folder.searchFiles(' title contains "History"');
+    Logger.log('Filter search completed');
+    if(filter.hasNext() == true){
+      Logger.log("Filter has next")
+    };
+ 
+
+
+    while (filter.hasNext()) {
+      var file = filter.next();
+      var filename = file.getName();
+      var fileid = file.getId();
+
+      gethistoricaldata(fileid);
+    };
+};
+};
+
+function gethistoricaldata(Fileid){
+  var source = SpreadsheetApp.openById(Fileid).getSheetByName(HISTORY);
+  var destination = SpreadsheetApp.openById(DATA_MART_SHEET).getSheetByName(TIMESHEET);
+  Logger.lo
+  var sourcelastrow = source.getLastRow(); 
+  var destinationlastrow = destination.getLastRow();
+  var datarange = source.getDataRange();
+  var datacol = datarange.getNumColumns();
+  var datarow = datarange.getNumRows();
+  Logger.log(datacol + ',' + datarow)
+  if(datarow>1){
+    var filterrange = source.getRange(2,1,datarow -1,datacol);
+    
+    Logger.log("gethistoricaldata num col "+ datacol + 'num rows ' + datarow);
+    var datavalues = filterrange.getValues();
+    Logger.log("gethistoricaldata - before setvalues")
+
+    destination.getRange(destinationlastrow+1,1,datarow-1,datacol).setValues(datavalues);
+    Logger.log('Values pasted')
+  };
+
+};
+// historical data import;
+function checkforfile(){
+  var financialdates = findfinancialyear();
+  var startyear = financialdates[0].getFullYear();
+  var endyear = financialdates[1].getFullYear();
+  var formattedDate = startyear + '-' + endyear;
+  var filename = "historical data " + formattedDate ; 
+  var folderid = DriveApp.getFoldersByName(AUTOMATED_HISTORY_FOLDER);
+  if(folderid){
+    while(folderid.hasNext()){
+      var folder = folderid.next();
+      var filterby = 'titile contains ' + '"' + formattedDate + '"'; 
+      Logger.log(filterby);
+      var filter = folder.searchFiles(filterby);
+      if(filter.hasNext()){
+        Logger.log("file exists");
+        var file = filter.next();
+        var fileid = file.getId();
+        var existingsheet = SpreadsheetApp.openById(fileid).getActiveSheet();
+        existingsheet.clear();
+        
+      }else{
+        Logger.log('File does not exist');
+        var file = SpreadsheetApp.create(filename);
+        Logger.log('Google Sheets file created successfully: ' + file.getUrl());
+        var fileid = file.getId();
+        folder.addFile(DriveApp.getFileById(fileid));
+        DriveApp.getRootFolder().removeFile(DriveApp.getFileById(fileid));
+        Logger.log(fileid);
+
+        
+      };
+    };
+    
+  }else{
+    Logger.log("Folder not found. ");
+  };
+  var CreatedSheetName = SpreadsheetApp.openById(fileid).getActiveSheet();
+  CreatedSheetName.setName(HISTORY);
+  return(fileid)
+};
+
+function takehistoricaldata(){
+  var histdataid = checkforfile();
+  var histdata = SpreadsheetApp.openById(histdataid).getSheetByName(HISTORY);
+  var dmsheet = SpreadsheetApp.openById(DATA_MART_SHEET).getSheetByName(TIMESHEET);
+  var dmrange = dmsheet.getDataRange();
+  var dmvals = dmrange.getValues();
+  var dmrows = dmrange.getNumRows();
+  var dmcol = dmrange.getNumColumns();
+  var filtereddata = [];
+  var fystartdate= new Date();
+  var fytilldate= new Date();
+  //fystartdate,fytilldate = findfinancialyear();
+  var dates = findfinancialyear();
+  fystartdate = dates[0];
+  fytilldate=dates[1];
+  var timesheetdate= new Date();
+  Logger.log("Start Date for Last FY is "+ fystartdate);
+  Logger.log("End Date for Last FY is "+ fytilldate);
+  //Logger.log(fytilldate);
+  Logger.log("Number of rows in range" +dmrows);
+  for( var i = 0; i< dmrows; i++){
+    Logger.log(dmvals[i])
+    
+    if( dmvals[i][0] == "Timesheet"){
+      //filtereddata.push(dmvals[i]);
+      timesheetdate= Date(dmvals[i][2]);
+      Logger.log("ETimesheet date is "+ dmvals[i][2]);
+      Logger.log("row is " + timesheetdate + fystartdate + fytilldate);
+      if(fystartdate<=dmvals[i][2] && dmvals[i][2] <=fytilldate){
+        filtereddata.push(dmvals[i]);
+       Logger.log("Row added")
+    };
+  };
+  };
+
+  if(filtereddata.length !=0){
+  
+      Logger.log('Header length is '+ HEADER.length);
+   
+      histdata.getRange(1,1,1,HEADER.length).setValues([HEADER]);
+      //histdata.getRange(1,1,1, 19).setValues(headerarray);
+      //histdata.getRange(1,1,headerarray.length, headerarray[0].length).setValues(headerarray);
+      histdata.getRange(2,1,filtereddata.length, 19).setValues(filtereddata);
+      Logger.log("Values pasted")
+  }else{
+    Logger.log("No data found/filtered data is empty")
+  };
+
+
+}
+
+
+
+
+
+function findfinancialyear(){
+
+  var todaysdate = new Date();
+  var month = todaysdate.getMonth() + 1;
+  var year = todaysdate.getFullYear();
+  Logger.log(year-1);
+  var currentfyenddate = new Date(year,2,31);
+  if(todaysdate<currentfyenddate){
+    var fystartdate = new Date(year-2,3,1);
+    var fytilldate = new Date(year-1,2,31);
+  }else{
+    var fystartdate = new Date(year-1,3,1);
+    var fytilldate = new Date(year,2,31)
+  }
+  //return(fystartdate,fytilldate);
+  Logger.log(currentfyenddate);
+  Logger.log(fytilldate);
+  Logger.log(fystartdate);
+  var dates =[fystartdate,fytilldate]
+  //return(fystartdate,fytilldate);
+  return(dates)
+
+};
+
+function parse_for_files_in_accounting(){
+  var folders = DriveApp.getFoldersByName(ACCOUNTING_FOLDER);
+  var invoices_mart = SpreadsheetApp.openById(INVOICE_MART).getSheetByName(INVOICES);
+  invoices_mart.clear();
+  invoices_mart.getRange(1,1,1,INVOICES_HEADER.length).setValues([INVOICES_HEADER]);
+
+
+
+  if (folders.hasNext()){
+    var folder = folders.next();
+    var files = folder.getFiles();
+    var filter = folder.searchFiles(' title contains "Invoices "');
+    Logger.log('Filter search completed');
+    if(filter.hasNext() == true){
+      Logger.log("Filter has next")
+    };
+
+    while (filter.hasNext()) {
+      var file = filter.next();
+      var fileid = file.getId();
+      Logger.log('File id is: '+ fileid);
+
+      consolidateinvoices(fileid);
+    };  
+  };
+  populatefromplan_ForInvoices();
+};
+
+function consolidateinvoices(fileid){
+  var invoices_mart = SpreadsheetApp.openById(INVOICE_MART).getSheetByName(INVOICES);
+  var invoice_sheet = SpreadsheetApp.openById(fileid).getSheetByName(INVOICES);
+
+  var invoices_range = invoice_sheet.getDataRange();
+  var invoices_columns = invoices_range.getNumColumns();
+  var mart_range = invoices_mart.getDataRange()
+  var mart_lastrow = invoices_mart.getLastRow();
+  var invoices_lastrow = invoice_sheet.getLastRow();
+  //var invoices_values = invoice_sheet.getRange(2,1,invoices_lastrow-1,invoices_columns).getValues();
+  //Logger.log('Values from invoices fetched');
+  //invoices_mart.getRange(mart_lastrow +1,1,invoices_lastrow-1,invoices_columns).setValues(invoices_values);
+  //Logger.log("Values pasted into mart");
+  for( var int = 2; int <= invoices_lastrow; int ++){
+    var row = invoice_sheet.getRange(int,1,1,invoices_columns).getValues(); 
+    var lastrow = invoices_mart.getLastRow();
+    //Logger.log(row[0][0]);
+    //Logger.log(row[0][1]);
+    //Logger.log(row[0][2]);
+    if(row[0][0]!="" && row[0][1]!="" && row[0][2]!=""){
+      invoices_mart.getRange(lastrow+1,1,1,invoices_columns).setValues(row);
+    };
+  };
+};
+function populatefromplan_ForInvoices(){
+  const plansheet = SpreadsheetApp.openById(FINANCIAL_PLAN_SHEET).getSheetByName(BILLING_PLAN);
+  const effortBookedSheet = SpreadsheetApp.openById(FINANCIAL_PLAN_SHEET).getSheetByName(EFFORT_SUMMARY);
+  const invoiceSummarySheet = SpreadsheetApp.openById(INVOICE_MART).getSheetByName(INVOICES);
+  const dmsheet = SpreadsheetApp.openById(INVOICE_MART).getSheetByName(BILLINGMART);
+  dmsheet.clear();
+  const stagingsheet = SpreadsheetApp.openById(STAGING_SHEET).getSheetByName(STAGING_INVOICEPLAN);
+
+  stagingsheet.clear();
+  var planrange = plansheet.getDataRange();
+  var planleng = planrange.getNumRows();
+  //Get Project and Stage
+  var planrangeps = plansheet.getRange(2,1,planleng,2);
+  var planvalps = planrangeps.getValues(); //
+  //Get Billing %
+  var planrangeb = plansheet.getRange(2,3,planleng,1 );
+  var planvalb = planrangeb.getValues();//
+  //Get Invoice Amount
+  var planrangeia = plansheet.getRange(2,5,planleng,1);
+  var planvalia = planrangeia.getValues();
+  //Get Invoice Scheduled Date
+  var planrangeisd = plansheet.getRange(2,7,planleng,1);
+  var planvalisd = planrangeisd.getValues();
+
+  //Get Invoice payment details
+  var planrangeCASap = plansheet.getRange(2,8,planleng,3);
+  var planvalCASap = planrangeCASap.getValues();
+
+  //Get Area Type and Planned Effort
+  var planrangeap = plansheet.getRange(2,13,planleng,2);
+  var planvalap = planrangeap.getValues();
+
+  var timesheetrange = dmsheet.getDataRange();
+  var timeleng = timesheetrange.getNumRows();
+
+  //paste Project and Stage
+  stagingsheet.getRange(1,7,planleng,2).setValues(planvalps);
+  //Paste Billing %
+  stagingsheet.getRange(1,25,planleng,1).setValues(planvalb);
+  //Paste Invoice Amount
+  stagingsheet.getRange(1,26,planleng,1).setValues(planvalia);
+  //Paste Invoice Scheduled Date
+  stagingsheet.getRange(1,4,planleng,1).setValues(planvalisd);
+  //Paste Invoice payment details
+  stagingsheet.getRange(1,27,planleng,3).setValues(planvalCASap);
+  //Get Area Type and Planned Effort
+  stagingsheet.getRange(1,30,planleng,2).setValues(planvalap);
+
+  var source = [];
+  for (var i = 0; i < planleng; i++ ){
+
+    source.push(['Plan'])
+  };
+  stagingsheet.getRange(2,1,planleng,1).setValues(source);
+
+  var stagingrange = stagingsheet.getDataRange();
+  var stagingvals = stagingrange.getValues();
+  //Logger.log('Entering Filter');
+  //Logger.log(stagingrange.getNumRows());
+  //Logger.log(stagingvals[1,4]);
+  
+  var filteredfromplan = [];
+  for(var i = 0; i< stagingrange.getNumRows();i++){
+    //Logger.log(stagingvals[i]);
+    Logger.log(stagingvals[i][6]);
+    if(stagingvals[i][6] != ""){
+      Logger.log(stagingvals[i][6]);
+      filteredfromplan.push(stagingvals[i]);
+    };
+  };
+
+  
+  dmsheet.getRange(1,1,1,BILLING_MART_HEADER.length).setValues([BILLING_MART_HEADER])
+  dmsheet.getRange(2,1,filteredfromplan.length,31).setValues(filteredfromplan)
+  
+  var billingSummary = invoiceSummarySheet.getDataRange();
+  //var InvoiceSummaryVals = billingSummary.getValues();
+  var invoicecount=billingSummary.getNumRows();
+  
+  billingSummary = invoiceSummarySheet.getRange(2,1,invoicecount,23);
+  var InvoiceSummaryVals = billingSummary.getValues();
+  Logger.log("Number of Rows in Billing summary :" + invoicecount);
+  var source = [];
+  for (var i = 0; i < invoicecount-1; i++ ){
+
+    source.push(['Invoices'])
+  };
+  dmsheet.getRange(filteredfromplan.length+2,1,invoicecount-1,1).setValues(source);
+  dmsheet.getRange(filteredfromplan.length+2,2,invoicecount,23).setValues(InvoiceSummaryVals);
+
+  var nextRow = filteredfromplan.length+invoicecount;
+  var EffortRange = effortBookedSheet.getDataRange();
+  var EffortRowCount = EffortRange.getNumRows();
+  EffortRange = effortBookedSheet.getRange(2,1,EffortRowCount,2);
+  var Effortval_projectnStage =EffortRange.getValues();
+  EffortRange = effortBookedSheet.getRange(2,4,EffortRowCount,1);
+  var EffortDate =EffortRange.getValues();
+  EffortRange = effortBookedSheet.getRange(2,5,EffortRowCount,1);
+  var Effortval_Efforts =EffortRange.getValues();
+  EffortRange = effortBookedSheet.getRange(2,3,EffortRowCount,1);
+  var EffortBookedBy =EffortRange.getValues();
+  var source = [];
+  for (var i = 0; i < EffortRowCount-1; i++ ){
+
+    source.push(['Timesheet'])
+  };
+  dmsheet.getRange(nextRow+1,1,EffortRowCount-1,1).setValues(source);
+  dmsheet.getRange(nextRow+1,4,EffortRowCount,1).setValues(EffortDate);
+  dmsheet.getRange(nextRow+1,7,EffortRowCount,2).setValues(Effortval_projectnStage);
+  dmsheet.getRange(nextRow+1,32,EffortRowCount,1).setValues(Effortval_Efforts);
+  dmsheet.getRange(nextRow+1,33,EffortRowCount,1).setValues(EffortBookedBy);
+};
+
+
+
+
+function invoices_to_data_mart(){
+  //parse_for_files_in_accounting();
+  var data_mart =SpreadsheetApp.openById(DATA_MART_SHEET).getSheetByName(TIMESHEET);
+  var invoices_mart = SpreadsheetApp.openById(INVOICE_MART).getSheetByName(INVOICES);
+  var invoices_staging = SpreadsheetApp.openById(STAGING_SHEET).getSheetByName(STAGING_INVOICES);
+  invoices_staging.clear();
+
+  var invoices_range = invoices_mart.getDataRange();
+  var invoices_rows = invoices_range.getNumRows();
+  var data_mart_range = data_mart.getDataRange();
+
+  
+
+  var inv_type_values = invoices_mart.getRange(2,2,invoices_rows,1).getValues();
+  invoices_staging.getRange(2,21,invoices_rows,1).setValues(inv_type_values);
+  Logger.log('Invoices type moved to staging');
+
+  var inv_date_values = invoices_mart.getRange(2,3,invoices_rows,1).getValues();
+  invoices_staging.getRange(2,3,invoices_rows,1).setValues(inv_date_values);
+  Logger.log('Invoices date moved to staging');
+
+  var corrected_name_stage = invoices_mart.getRange(2,6,invoices_rows,2).getValues();
+  invoices_staging.getRange(2,4,invoices_rows,2).setValues(corrected_name_stage);
+  Logger.log('Corrected names and stage moved to staging');
+
+  var company = invoices_mart.getRange(2,1,invoices_rows,1).getValues();
+  invoices_staging.getRange(2,20,invoices_rows,1).setValues(company);
+  Logger.log('Company moved to staging');
+
+  var a_to_paymentdate = invoices_mart.getRange(2,10,invoices_rows,9).getValues();
+  invoices_staging.getRange(2,22,invoices_rows,9).setValues(a_to_paymentdate);
+  Logger.log('(A) to Payment Date moved to staging');
+  var source = [];
+  for (var i = 0; i < invoices_rows; i++ ){
+
+    source.push(['Invoices'])
+  };
+
+  Logger.log(invoices_rows);
+  invoices_staging.getRange(2,1,invoices_rows,1).setValues(source);
+
+
+  var staging_range = invoices_staging.getDataRange();
+  var staging_columns = staging_range.getNumColumns();
+  var staging_rows = staging_range.getNumRows();
+  var datamart_lastrow = data_mart.getLastRow();
+
+  //data_mart.getRange(datamart_lastrow+1,1,1,staging_columns).setValues(row_data);
+
+
+  var invoicedata = invoices_staging.getRange(2,1,staging_rows,30).getValues();
+  data_mart.getRange(datamart_lastrow+1,1,staging_rows,30).setValues(invoicedata);
+
+/*  for( var int=2; int<=staging_rows; int++){
+    var datamart_lastrow = data_mart.getLastRow();
+    var row_data = invoices_staging.getRange(int,1,1,staging_columns).getValues();
+    Logger.log(row_data[0][20]);
+    if(row_data[0][20]!= "Proforma"){
+      data_mart.getRange(datamart_lastrow+1,1,1,staging_columns).setValues(row_data);
+    };
+  };
+
+  */
+
+
+  Logger.log('Staging data moved to datamart');
+};
+
+// Project Name|	Stage	|Billing %|	Total Billing %	|Invoice Amount|	Agreed Billing|	Invoice Schedule Date|	Invoice No|	Invoice Raised Date|	Invoice Paid Date|	Area Type|	Planned Effort|
+// Billing %','Invoice Amount', 'Invoice Number', 'Invoice Raised Date', 'Invoice Paid Date', 'Area Type','Planned Effort'
+
+//[ Stage, Billing %, Invoice Amount, Invoice Schedule Date, Invoice Number, Invoice Raised Date, Invoice Paid Date, Area Type, Planned Effort]
